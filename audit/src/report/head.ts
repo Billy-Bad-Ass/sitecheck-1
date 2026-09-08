@@ -38,6 +38,17 @@ export const PAGES: PageMeta[] = [
     description: 'Your order is in.',
     indexable: false,
   },
+  // Written by build-web rather than copied from web/, so it never appears in
+  // the file loop — it is here so the sitemap and the social tags know about
+  // it. Indexable: it is the best answer this site has to "is it any good?",
+  // and a stranger who finds it has found the product.
+  {
+    file: 'example-report.html',
+    title: 'An example report, in full',
+    description:
+      'The whole thing a customer receives — every finding, what it costs them and how to fix it — on a website we invented.',
+    indexable: true,
+  },
 ];
 
 function trimOrigin(origin: string): string {

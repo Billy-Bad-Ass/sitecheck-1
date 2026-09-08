@@ -12,6 +12,7 @@ import {
 } from '../report/proof';
 import { guideHtml, GUIDE_CSS } from '../report/guide';
 import { PAGES, robotsTxt, sitemapXml, socialTags } from '../report/head';
+import { exampleReport } from '../report/example-page';
 
 /**
  * Builds the sales site by substituting real values into the templates.
@@ -203,6 +204,21 @@ async function main(): Promise<void> {
       await cp(join(SRC, file), join(OUT, file), { recursive: true });
     }
   }
+
+  // The whole example report, as a page a stranger can open.
+  //
+  // The sales page already shows a screenshot of its first page, taken from
+  // this same template — but a picture of a document answers "does it look
+  // serious?" and not "is it any good?". Somebody deciding whether to spend a
+  // hundred dollars wants to read one, including the boring findings at the
+  // bottom, and a picture cannot be read.
+  //
+  // Rendered here rather than committed, for the same reason the screenshot is
+  // shot rather than drawn: a copy would stop matching the report the first
+  // time the template changed, and the page would then be advertising
+  // something that no longer arrives.
+  await writeFile(join(OUT, 'example-report.html'), exampleReport(), 'utf8');
+  built += 1;
 
   if (origin) {
     await writeFile(join(OUT, 'sitemap.xml'), sitemapXml(origin), 'utf8');

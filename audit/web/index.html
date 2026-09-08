@@ -18,6 +18,14 @@ SOCIAL_TAGS
   .section-lede{color:var(--muted);margin:0 0 22px;font-size:15.5px}
   .preview{padding-top:8px}
   .shot{margin-top:4px}
+  /* A quiet second button. The buy button is the loud one on this page and
+     stays that way — this one is for the visitor who wants to read the thing
+     before spending anything, which is most of them. */
+  .cta-quiet{display:inline-block;font-weight:650;font-size:16.5px;padding:13px 26px;
+       border-radius:9px;text-decoration:none;color:var(--accent);
+       border:1.5px solid var(--accent);background:transparent}
+  .cta-quiet:hover{background:var(--accent);color:#fff}
+  .read-it{margin:22px 0 0;text-align:center}
   *{box-sizing:border-box}
   body{margin:0;font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
   .wrap{max-width:760px;margin:0 auto;padding:0 24px}
@@ -103,6 +111,13 @@ SOCIAL_TAGS
       <img src="assets/report-preview.png" alt="The first page of a website review: a health score of 46 out of 100, a plain-English summary, and the first two urgent findings each with why it matters and how to fix it." width="900" height="1180" loading="lazy">
       <figcaption>A real report, rendered by the same template yours would be. The business is an example; the findings are the ones we see most often.</figcaption>
     </figure>
+    <p class="read-it">
+      <a class="cta-quiet" href="example-report.html">Read the whole example report</a>
+    </p>
+    <p class="cta-note">
+      All of it, including the boring findings at the bottom. Nothing is hidden behind
+      the price.
+    </p>
   </section>
 
   <section>

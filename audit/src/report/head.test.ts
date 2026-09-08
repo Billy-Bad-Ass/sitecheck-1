@@ -62,9 +62,18 @@ test('indexable pages are not marked noindex', () => {
 });
 
 test('the sitemap lists every indexable page and nothing else', () => {
+  // Derived from PAGES rather than written out: a hardcoded list turns adding
+  // a page into a failing test, which teaches whoever added it to edit the
+  // expectation — and the next page that should NOT be indexed gets waved
+  // through the same way.
   const xml = sitemapXml('https://example.com');
   const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-  assert.deepEqual(locs, ['https://example.com/', 'https://example.com/legal.html']);
+  const expected = PAGES.filter((p) => p.indexable).map((p) =>
+    p.file === 'index.html' ? 'https://example.com/' : `https://example.com/${p.file}`
+  );
+  assert.deepEqual(locs, expected);
+  assert.ok(locs.includes('https://example.com/'), 'the home page is missing');
+  assert.ok(!locs.some((l) => l.includes('thanks')), 'a noindex page reached the sitemap');
 });
 
 test('robots points at the sitemap', () => {
