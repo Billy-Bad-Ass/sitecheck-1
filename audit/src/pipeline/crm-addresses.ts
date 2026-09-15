@@ -20,6 +20,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { makeD1 } from '../lib/d1';
 
 export interface CsvRow {
   name?: string;
@@ -238,39 +239,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const d1 = async (sql: string, params: string[] = []): Promise<CrmRow[]> => {
-    const res = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${database}/query`,
-      {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ sql, params }),
-      },
-    );
-    const body = (await res.json().catch(() => ({}))) as {
-      success?: boolean;
-      errors?: { code: number; message: string }[];
-      result?: { results?: CrmRow[] }[];
-    };
-    if (!res.ok || body.success === false) {
-      const why = (body.errors ?? []).map((e) => `${e.code} ${e.message}`).join('; ');
-      if (res.status === 403 || res.status === 401) {
-        // Worth naming precisely: this repository's Cloudflare token is scoped
-        // for Pages and R2, not D1, so it authenticates and then refuses. That
-        // is a permissions gap to fix on the token, not a bug here.
-        throw new Error(
-          `D1 ${res.status} — CLOUDFLARE_API_TOKEN cannot reach D1. It needs Account / D1 / Edit. (${why})`,
-        );
-      }
-      throw new Error(`D1 ${res.status}${why ? ` — ${why}` : ''}`);
-    }
-    return body.result?.[0]?.results ?? [];
-  };
+  const d1 = makeD1(token, account, database);
 
   const withAddress = rows.filter((r) => r.email).length;
   console.log(`artifact: ${rows.length} businesses, ${withAddress} with an address`);
 
-  const clients = await d1(
+  const clients = await d1<CrmRow>(
     `SELECT id, website, email FROM clients WHERE website IS NOT NULL AND website <> ''`,
   );
   const reachable = clients.filter((c) => c.email).length;

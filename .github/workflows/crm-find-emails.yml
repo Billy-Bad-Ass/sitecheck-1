@@ -1,0 +1,69 @@
+name: Find addresses for the prospects already in the CRM
+
+# Why this exists
+# ---------------
+# crm-addresses.yml carries addresses out of a sweep's artifact into the CRM.
+# That works, but only for businesses a sweep found *with* an address, and the
+# 49 prospects in the CRM today have none: the 24 August sweep predates the
+# email finder entirely — checked on 15 September, its artifact holds three
+# drafts and not one address — and re-sweeping does not reach them either,
+# because a sweep skips every business it has already seen.
+#
+# So this starts from the CRM instead of from an artifact: the rows that have
+# a website and no address, looked at the same way find-emails.ts looks at a
+# sweep's prospects, written back into the blank column.
+#
+# It runs here rather than in an agent session because agent sandboxes cannot
+# reach arbitrary websites — the same reason the loader runs here.
+#
+# Addresses go straight into the private CRM database. They are never printed,
+# never committed, never uploaded: this repository is public and its logs are
+# public with it. The log names a business only when it came up EMPTY, with
+# the reason, because that is the part a human has to act on.
+
+on:
+  workflow_dispatch:
+    inputs:
+      database_id:
+        description: 'D1 database to write to (default: bba-heartbeat)'
+        required: false
+        default: 'a57d42d4-701d-4a24-8143-3271c0d4de86'
+      limit:
+        description: 'Look at no more than this many sites. 0 means all of them.'
+        required: false
+        default: '0'
+      apply:
+        description: 'Write to the database. Leave off for a dry run that only counts.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never two at once: both would read the same blank rows and race each other
+# over the same column.
+concurrency:
+  group: crm-find-emails
+  cancel-in-progress: false
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Look for the addresses
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DATABASE_ID: ${{ inputs.database_id }}
+          APPLY: ${{ inputs.apply }}
+          LIMIT: ${{ inputs.limit }}
+        working-directory: audit
+        run: |
+          npm ci
+          npm run crm:emails
