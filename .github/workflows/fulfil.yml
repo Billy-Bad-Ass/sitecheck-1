@@ -91,6 +91,34 @@ jobs:
       #
       # STRIPE_SECRET_KEY must be a restricted READ key: nothing in the
       # pipeline writes to Stripe, and nothing ever should.
+      # Whether this run could see an order at all, decided before the run so
+      # the report at the end can say something true.
+      #
+      # Without STRIPE_SECRET_KEY the pipeline exits clean and the job goes
+      # green — which is right for the job (there is nothing it can usefully
+      # do) and wrong for the dashboard, which was being told "Checked Stripe
+      # for paid audits" by a run that had not looked at Stripe. This product
+      # takes live money and has no webhook: polling is the entire delivery
+      # path, so a comfortable summary is the exact shape of the failure where
+      # somebody pays and never hears from us.
+      - id: armed
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          missing=""
+          [ -z "${STRIPE_SECRET_KEY// }" ] && missing="STRIPE_SECRET_KEY"
+          [ -z "${RESEND_API_KEY// }" ] && missing="${missing:+$missing and }RESEND_API_KEY"
+
+          if [ -n "$missing" ]; then
+            echo "armed=false" >> "$GITHUB_OUTPUT"
+            echo "missing=$missing" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Fulfilment is not armed::$missing is not set, so paid audits cannot be seen or delivered. Every run since has reported success without checking Stripe."
+          else
+            echo "armed=true" >> "$GITHUB_OUTPUT"
+            echo "missing=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fulfil
         run: npm run fulfil -- ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
@@ -112,9 +140,11 @@ jobs:
           status: ${{ job.status == 'success' && 'ok' || 'failed' }}
           started_at: ${{ steps.start.outputs.started }}
           summary: >-
-            ${{ job.status == 'success'
-                && 'Checked Stripe for paid audits.'
-                || 'Fulfilment run did not complete — paid audits may be undelivered.' }}
+            ${{ steps.armed.outputs.armed != 'true'
+                && format('NOT ARMED — {0} is not set. Stripe was never checked, so a paid audit would go undelivered and unnoticed.', steps.armed.outputs.missing)
+                || (job.status == 'success'
+                    && 'Checked Stripe for paid audits.'
+                    || 'Fulfilment run did not complete — paid audits may be undelivered.') }}
           artifact_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           dashboard_url: ${{ secrets.DASHBOARD_URL }}
           dashboard_token: ${{ secrets.DASHBOARD_TOKEN }}
