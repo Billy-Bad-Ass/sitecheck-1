@@ -6,16 +6,31 @@ const row = (over: Partial<Candidate>): Candidate => ({
   id: 1,
   website: 'https://example.com/',
   email: null,
+  phone: null,
   ...over,
 });
 
-test('skips rows that already have an address', () => {
+test('skips only the rows that have both an address and a number', () => {
   const out = targets([
-    row({ id: 1, website: 'https://a.com/', email: 'info@a.com' }),
-    row({ id: 2, website: 'https://b.com/', email: null }),
-    row({ id: 3, website: 'https://c.com/', email: '' }),
+    row({ id: 1, website: 'https://a.com/', email: 'info@a.com', phone: '+17035550100' }),
+    row({ id: 2, website: 'https://b.com/', email: null, phone: null }),
+    row({ id: 3, website: 'https://c.com/', email: '', phone: '' }),
   ]);
   assert.deepEqual(out.map((r) => r.id), [2, 3]);
+});
+
+/**
+ * Thirty-five of the forty-nine prospects publish no email at all — they run a
+ * contact form instead. Every one of them publishes a phone number. Treating a
+ * row as finished the moment it has an address would leave the ones that can
+ * only be phoned looking exactly like the ones that cannot be reached at all.
+ */
+test('a row with an address but no number is still worth looking at', () => {
+  const out = targets([
+    row({ id: 1, website: 'https://a.com/', email: 'info@a.com', phone: null }),
+    row({ id: 2, website: 'https://b.com/', email: null, phone: '+17035550100' }),
+  ]);
+  assert.deepEqual(out.map((r) => r.id), [1, 2]);
 });
 
 test('skips rows with no website to look at', () => {
