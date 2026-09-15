@@ -200,7 +200,19 @@ export function tidyAddress(raw: string): string | null {
     .trim()
     .toLowerCase();
 
-  return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,24}$/.test(cleaned) ? cleaned : null;
+  if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,24}$/.test(cleaned)) return null;
+
+  // A dot cannot open or close the local part, and cannot double up. Found in
+  // production: a Northern Virginia law firm's page yielded
+  // `sgarlatlaw.@gmail.com`, which passed the pattern above, went into the CRM
+  // as reachable, and would have bounced at Gmail the moment anyone used it.
+  // Rejecting loses a probably-real address; keeping it loses the send AND
+  // tells us nothing went wrong. This module already takes that trade — no
+  // address is a fine answer, a plausible wrong one is not.
+  const local = cleaned.split('@')[0] ?? '';
+  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) return null;
+
+  return cleaned;
 }
 
 /** Anything that is shaped like an address but is not one someone reads. */
