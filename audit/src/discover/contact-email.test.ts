@@ -277,3 +277,21 @@ test('another company’s site is never followed', () => {
 test('a page with nothing contact-shaped returns null rather than a guess', () => {
   assert.equal(contactPageUrl(page('<a href="/services/">Our services</a>')), null);
 });
+
+/**
+ * Found in production on 15 September 2026.
+ *
+ * sgarlatlaw.com yielded `sgarlatlaw.@gmail.com`. It satisfied the address
+ * pattern, was written into the CRM as a reachable prospect, and would have
+ * bounced at Gmail the first time anyone sent to it — the exact failure this
+ * module exists to prevent, since a bounce looks identical to being ignored.
+ */
+test('refuses a local part that opens, closes or doubles a dot', () => {
+  assert.equal(tidyAddress('sgarlatlaw.@gmail.com'), null);
+  assert.equal(tidyAddress('.info@example.com'), null);
+  assert.equal(tidyAddress('in..fo@example.com'), null);
+});
+
+test('still keeps the dots a real address uses', () => {
+  assert.equal(tidyAddress('first.last@example.com'), 'first.last@example.com');
+});
