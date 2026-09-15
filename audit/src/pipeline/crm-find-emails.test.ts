@@ -7,6 +7,7 @@ const row = (over: Partial<Candidate>): Candidate => ({
   website: 'https://example.com/',
   email: null,
   phone: null,
+  status: 'prospect',
   ...over,
 });
 
@@ -66,4 +67,19 @@ test('keeps genuinely different sites', () => {
     row({ id: 2, website: 'https://b.com/' }),
   ]);
   assert.equal(out.length, 2);
+});
+
+/**
+ * Somebody who replied "stop" is marked do-not-contact, and this step must not
+ * so much as fetch their homepage again. The query excludes them too; this
+ * pins the rule in code, because a rule living only in one SQL string is one
+ * refactor away from being gone and the cost of losing it is contacting a
+ * person who asked us not to.
+ */
+test('never looks at a business that asked us to stop', () => {
+  const out = targets([
+    row({ id: 1, website: 'https://a.com/', status: 'do-not-contact' }),
+    row({ id: 2, website: 'https://b.com/', status: 'prospect' }),
+  ]);
+  assert.deepEqual(out.map((r) => r.id), [2]);
 });

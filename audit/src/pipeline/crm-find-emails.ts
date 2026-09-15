@@ -34,6 +34,7 @@ import { siteKey, type CrmRow } from './crm-addresses';
 export interface Candidate extends CrmRow {
   name?: string | null;
   phone?: string | null;
+  status?: string | null;
 }
 
 /**
@@ -47,6 +48,10 @@ export function targets(rows: Candidate[]): Candidate[] {
   const seen = new Set<string>();
   const out: Candidate[] = [];
   for (const row of rows) {
+    // Belt and braces with the WHERE clause above. A rule that only exists in
+    // one SQL string is one refactor away from being gone, and the cost of
+    // getting this wrong is contacting somebody who asked us not to.
+    if (row.status === 'do-not-contact') continue;
     if (!row.website) continue;
     // A row with an address but no number is still worth a look: thirty-five
     // of forty-nine publish no email, and the ones that do often answer the
@@ -172,8 +177,13 @@ async function main(): Promise<void> {
   const d1 = makeD1(token, account, database);
 
   const rows = (await d1(
+    // 'do-not-contact' is excluded in the query rather than filtered after,
+    // so somebody who asked us to stop is never even fetched. They said stop;
+    // quietly downloading their homepage twice a month is not honouring that,
+    // however little it costs us.
     `SELECT id, name, website, email, phone FROM clients
       WHERE website IS NOT NULL AND website <> ''
+        AND COALESCE(status, '') <> 'do-not-contact'
         AND ((email IS NULL OR email = '') OR (phone IS NULL OR phone = ''))`,
   )) as Candidate[];
 
