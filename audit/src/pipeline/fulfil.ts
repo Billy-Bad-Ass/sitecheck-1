@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { auditSite } from '../lib/audit';
 import { PageFetcher } from '../lib/fetch-page';
-import { fetchPaidOrders, stripeClient } from '../lib/orders';
+import { fetchPaidOrders, resolvePaymentLinkId, stripeClient } from '../lib/orders';
 import { archiveReport, loadLedger, saveLedger } from '../lib/r2-ledger';
 import { buildReportEmail, redactEmail, sendEmail } from '../lib/resend';
 import { fulfilOrders, outstandingActions, type Ledger } from './fulfil-core';
@@ -98,8 +98,21 @@ async function main(): Promise<void> {
     );
   }
 
+  // The id and the checkout URL are two names for one payment link, and only
+  // the URL was ever written down here — it is the secret that builds the buy
+  // button on the sales page. Rather than stall on someone copying the other
+  // name out of a dashboard, ask Stripe which link that URL is.
+  let paymentLinkId = args.paymentLinkId;
+  if (!paymentLinkId?.trim()) {
+    const checkoutUrl = process.env.STRIPE_PAYMENT_LINK?.trim();
+    if (checkoutUrl) {
+      paymentLinkId = await resolvePaymentLinkId(stripe, checkoutUrl);
+      log(`Payment link resolved from the checkout URL on file: ${paymentLinkId}`);
+    }
+  }
+
   log('Fetching paid orders...');
-  let orders = await fetchPaidOrders(stripe, { paymentLinkId: args.paymentLinkId });
+  let orders = await fetchPaidOrders(stripe, { paymentLinkId });
 
   if (args.sessionId) orders = orders.filter((o) => o.sessionId === args.sessionId);
 

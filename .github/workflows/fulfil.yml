@@ -106,16 +106,22 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           STRIPE_PAYMENT_LINK_ID: ${{ vars.STRIPE_PAYMENT_LINK_ID || secrets.STRIPE_PAYMENT_LINK_ID }}
+          STRIPE_PAYMENT_LINK: ${{ secrets.STRIPE_PAYMENT_LINK }}
         run: |
           missing=""
           [ -z "${STRIPE_SECRET_KEY// }" ] && missing="STRIPE_SECRET_KEY"
           [ -z "${RESEND_API_KEY// }" ] && missing="${missing:+$missing and }RESEND_API_KEY"
-          # Without this the pipeline refuses to list orders at all — on
-          # purpose, because this Stripe account also sells the printable
-          # guides and an unscoped query would email every guide buyer an
-          # audit they never ordered. Counted as missing here so arming the
-          # other two does not produce a job that throws every 20 minutes.
-          [ -z "${STRIPE_PAYMENT_LINK_ID// }" ] && missing="${missing:+$missing and }STRIPE_PAYMENT_LINK_ID"
+          # One of these two, not both. The pipeline refuses to list orders
+          # without a payment link to scope them to — on purpose, because this
+          # Stripe account also sells the printable guides and an unscoped
+          # query would email every guide buyer an audit they never ordered.
+          # The id scopes it directly; the checkout URL (already a secret, it
+          # is what builds the buy button on the sales page) resolves to the
+          # id at run time. Either arms it, so nobody has to go and find the
+          # same link written a second way.
+          if [ -z "${STRIPE_PAYMENT_LINK_ID// }" ] && [ -z "${STRIPE_PAYMENT_LINK// }" ]; then
+            missing="${missing:+$missing and }STRIPE_PAYMENT_LINK_ID or STRIPE_PAYMENT_LINK"
+          fi
 
           if [ -n "$missing" ]; then
             echo "armed=false" >> "$GITHUB_OUTPUT"
@@ -138,6 +144,9 @@ jobs:
           # checkout URL every customer sees. Read from secrets too, so it
           # works wherever it was already put.
           STRIPE_PAYMENT_LINK_ID: ${{ vars.STRIPE_PAYMENT_LINK_ID || secrets.STRIPE_PAYMENT_LINK_ID }}
+          # The same link written the other way. Used only when the id above
+          # is unset, and resolved through Stripe rather than guessed at.
+          STRIPE_PAYMENT_LINK: ${{ secrets.STRIPE_PAYMENT_LINK }}
           # Optional. Default sender is audit@bbanetwork.org, which needs the
           # domain verified in Resend; override if it is sending from another.
           RESEND_FROM: ${{ vars.RESEND_FROM }}
