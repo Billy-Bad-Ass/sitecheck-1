@@ -47,7 +47,23 @@ function wrangler(args: string[], input?: string): string {
  * re-email) every order ever paid.
  */
 export function isMissingObject(stderrText: string): boolean {
-  return /404|not found|does not exist|nosuchkey/i.test(stderrText);
+  // Two classes of failure also say "not found" or "does not exist", and both
+  // used to land here — which is the re-delivery the paragraph above forbids,
+  // reached by the one route nothing was watching:
+  //
+  //   a missing or mistyped BUCKET   — "The specified bucket does not exist"
+  //   a broken TOOLCHAIN             — "wrangler: not found" from the shell
+  //
+  // Neither means the ledger is absent. Both mean we cannot see it, and a
+  // typo in a bucket name would have re-audited and re-emailed every customer
+  // who ever paid. Disqualified before anything else is considered.
+  if (/bucket/i.test(stderrText)) return false;
+
+  // The error has to positively say THIS OBJECT is absent. A bare "not found"
+  // is not enough — it is the most common substring in the whole error
+  // surface, shell and HTTP alike, and the default when this is wrong has to
+  // be to stop. Nothing a broken toolchain prints carries one of these.
+  return /nosuchkey|specified key does not exist|\b404\b/i.test(stderrText);
 }
 
 export async function loadLedger(): Promise<Ledger> {

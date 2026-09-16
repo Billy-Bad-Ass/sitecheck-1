@@ -35,6 +35,14 @@ on:
         description: 'Only show what is waiting; deliver nothing'
         type: boolean
         default: false
+      self_test:
+        description: 'Instead of fulfilling: check the delivery path end to end'
+        type: boolean
+        default: false
+      self_test_email:
+        description: 'With self_test: send one real email here to prove sending works'
+        type: string
+        default: ''
 
 # One fulfilment run at a time, ever. queued rather than cancelled: killing a
 # run mid-order is how a report gets emailed but never recorded.
@@ -106,16 +114,22 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           STRIPE_PAYMENT_LINK_ID: ${{ vars.STRIPE_PAYMENT_LINK_ID || secrets.STRIPE_PAYMENT_LINK_ID }}
+          STRIPE_PAYMENT_LINK: ${{ secrets.STRIPE_PAYMENT_LINK }}
         run: |
           missing=""
           [ -z "${STRIPE_SECRET_KEY// }" ] && missing="STRIPE_SECRET_KEY"
           [ -z "${RESEND_API_KEY// }" ] && missing="${missing:+$missing and }RESEND_API_KEY"
-          # Without this the pipeline refuses to list orders at all — on
-          # purpose, because this Stripe account also sells the printable
-          # guides and an unscoped query would email every guide buyer an
-          # audit they never ordered. Counted as missing here so arming the
-          # other two does not produce a job that throws every 20 minutes.
-          [ -z "${STRIPE_PAYMENT_LINK_ID// }" ] && missing="${missing:+$missing and }STRIPE_PAYMENT_LINK_ID"
+          # One of these two, not both. The pipeline refuses to list orders
+          # without a payment link to scope them to — on purpose, because this
+          # Stripe account also sells the printable guides and an unscoped
+          # query would email every guide buyer an audit they never ordered.
+          # The id scopes it directly; the checkout URL (already a secret, it
+          # is what builds the buy button on the sales page) resolves to the
+          # id at run time. Either arms it, so nobody has to go and find the
+          # same link written a second way.
+          if [ -z "${STRIPE_PAYMENT_LINK_ID// }" ] && [ -z "${STRIPE_PAYMENT_LINK// }" ]; then
+            missing="${missing:+$missing and }STRIPE_PAYMENT_LINK_ID or STRIPE_PAYMENT_LINK"
+          fi
 
           if [ -n "$missing" ]; then
             echo "armed=false" >> "$GITHUB_OUTPUT"
@@ -126,7 +140,26 @@ jobs:
             echo "missing=" >> "$GITHUB_OUTPUT"
           fi
 
+      # Checks the four things between a payment and a delivered report, doing
+      # the real thing for each rather than inferring any of them. Every
+      # scheduled run for months reported success while holding no Stripe key,
+      # because "the job did not throw" and "somebody got their report" were
+      # never the same question. This asks the second one, on demand, without
+      # needing a customer to be the test case.
+      - name: Self-test the delivery path
+        if: inputs.self_test
+        run: npm run selftest -- ${{ inputs.self_test_email && format('--to {0}', inputs.self_test_email) || '' }}
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          STRIPE_PAYMENT_LINK_ID: ${{ vars.STRIPE_PAYMENT_LINK_ID || secrets.STRIPE_PAYMENT_LINK_ID }}
+          STRIPE_PAYMENT_LINK: ${{ secrets.STRIPE_PAYMENT_LINK }}
+          RESEND_FROM: ${{ vars.RESEND_FROM }}
+
       - name: Fulfil
+        if: ${{ !inputs.self_test }}
         run: npm run fulfil -- ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -138,6 +171,9 @@ jobs:
           # checkout URL every customer sees. Read from secrets too, so it
           # works wherever it was already put.
           STRIPE_PAYMENT_LINK_ID: ${{ vars.STRIPE_PAYMENT_LINK_ID || secrets.STRIPE_PAYMENT_LINK_ID }}
+          # The same link written the other way. Used only when the id above
+          # is unset, and resolved through Stripe rather than guessed at.
+          STRIPE_PAYMENT_LINK: ${{ secrets.STRIPE_PAYMENT_LINK }}
           # Optional. Default sender is audit@bbanetwork.org, which needs the
           # domain verified in Resend; override if it is sending from another.
           RESEND_FROM: ${{ vars.RESEND_FROM }}
@@ -158,9 +194,13 @@ jobs:
           summary: >-
             ${{ steps.armed.outputs.armed != 'true'
                 && format('NOT ARMED — {0} is not set. Stripe was never checked, so a paid audit would go undelivered and unnoticed.', steps.armed.outputs.missing)
-                || (job.status == 'success'
-                    && 'Checked Stripe for paid audits.'
-                    || 'Fulfilment run did not complete — paid audits may be undelivered.') }}
+                || (inputs.self_test
+                    && (job.status == 'success'
+                        && 'Self-test: the delivery path works end to end.'
+                        || 'Self-test FAILED — a paid audit would not be delivered.')
+                    || (job.status == 'success'
+                        && 'Checked Stripe for paid audits.'
+                        || 'Fulfilment run did not complete — paid audits may be undelivered.')) }}
           artifact_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           dashboard_url: ${{ secrets.DASHBOARD_URL }}
           dashboard_token: ${{ secrets.DASHBOARD_TOKEN }}

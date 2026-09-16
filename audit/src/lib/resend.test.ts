@@ -42,6 +42,31 @@ test('a missing ledger object is distinguished from an unreachable bucket', () =
   // empty would re-email every order ever paid.
   assert.equal(isMissingObject('Failed to fetch ... - 404: Not Found'), true);
   assert.equal(isMissingObject('The specified key does not exist'), true);
+  assert.equal(isMissingObject('NoSuchKey'), true);
   assert.equal(isMissingObject('Authentication error [code: 10000]'), false);
   assert.equal(isMissingObject('fetch failed: getaddrinfo ENOTFOUND'), false);
+});
+
+test('a bucket that is not there is not an empty ledger', () => {
+  // These four all said "not found" or "does not exist" and all used to be
+  // read as "the ledger has not been written yet". None of them means that.
+  // A mistyped bucket name or a runner without wrangler on it would have
+  // re-audited and re-emailed every customer who ever paid — the precise
+  // outcome the function exists to prevent, reached through the wording of
+  // the error rather than through its meaning.
+  assert.equal(isMissingObject('The specified bucket does not exist'), false);
+  assert.equal(
+    isMissingObject('A request to the Cloudflare API failed. bucket not found [code: 10006]'),
+    false,
+  );
+  assert.equal(isMissingObject('/bin/sh: 1: wrangler: not found'), false);
+  assert.equal(isMissingObject('npm error could not determine executable to run'), false);
+});
+
+test('a real 404 still reads as missing, despite saying "Not Found"', () => {
+  // The obvious fix for the test above — excluding anything matching
+  // ": not found" — breaks this, because "404: Not Found" contains it. The
+  // rule has to be that the error positively names the object, not that it
+  // avoids a phrase.
+  assert.equal(isMissingObject('Failed to fetch https://... - 404: Not Found'), true);
 });

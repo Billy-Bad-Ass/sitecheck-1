@@ -27,7 +27,8 @@
     "shortlist": "tsx src/pipeline/shortlist.ts",
     "send": "tsx src/pipeline/send-emails.ts",
     "sweep": "tsx src/pipeline/sweep.ts",
-    "crm:emails": "tsx src/pipeline/crm-find-emails.ts"
+    "crm:emails": "tsx src/pipeline/crm-find-emails.ts",
+    "selftest": "tsx src/pipeline/selftest.ts"
   },
   "dependencies": {
     "node-html-parser": "^6.1.13",

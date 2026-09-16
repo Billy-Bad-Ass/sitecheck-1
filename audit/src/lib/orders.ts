@@ -150,3 +150,90 @@ export async function fetchPaidOrders(
 
   return orders;
 }
+
+/** Raised when the checkout URL on file matches no payment link, or several. */
+export class UnresolvablePaymentLink extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnresolvablePaymentLink';
+  }
+}
+
+/**
+ * Normalise a Stripe checkout URL so two spellings of the same link match.
+ *
+ * Trailing slashes, a `?prefilled_email=` a marketing page appended, and a
+ * capitalised host are all the same link to Stripe and all different strings
+ * here. The path is left case-sensitive on purpose: the link id inside it is,
+ * and lowercasing it would make two genuinely different links collide.
+ */
+export function normaliseCheckoutUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  try {
+    const url = new URL(trimmed);
+    const path = url.pathname.replace(/\/+$/, '');
+    return `${url.protocol}//${url.host.toLowerCase()}${path}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find the `plink_...` id for a checkout URL.
+ *
+ * Exists because the id and the URL are two names for one thing, and only one
+ * of them was ever written down. STRIPE_PAYMENT_LINK — the URL — is already a
+ * secret here: it is what builds the buy button on the live sales page. The id
+ * is what scopes the order query. Asking for it a second time, in a different
+ * format, out of a dashboard, is a step that can be got wrong and a launch that
+ * waits on somebody finding a settings screen on a phone.
+ *
+ * Deliberately strict. Zero matches throws and more than one throws, because
+ * the caller's next move is emailing customers: guessing which link is the
+ * audit is how a guide buyer receives a website audit. An unscoped fallback is
+ * never the answer, which is why this returns a string or raises.
+ */
+export async function resolvePaymentLinkId(stripe: Stripe, checkoutUrl: string): Promise<string> {
+  // Already an id. Callers pass whichever of the two they were given rather
+  // than deciding, so accepting both is the whole point.
+  const asId = checkoutUrl.trim();
+  if (asId.startsWith('plink_')) return asId;
+
+  const wanted = normaliseCheckoutUrl(asId);
+  if (!wanted) {
+    throw new UnresolvablePaymentLink(
+      `STRIPE_PAYMENT_LINK is not a URL or a plink_ id: ${JSON.stringify(asId)}.\n` +
+        `Expected the checkout link from Stripe, e.g. https://buy.stripe.com/xxxx.`,
+    );
+  }
+
+  const matches: string[] = [];
+  let seen = 0;
+  for await (const link of stripe.paymentLinks.list({ limit: 100 })) {
+    seen += 1;
+    if (normaliseCheckoutUrl(link.url ?? '') === wanted) matches.push(link.id);
+  }
+
+  if (matches.length === 1) return matches[0]!;
+
+  if (matches.length === 0) {
+    throw new UnresolvablePaymentLink(
+      `No payment link in this Stripe account has the URL on file.\n\n` +
+        `Looked for: ${wanted}\n` +
+        `Searched ${seen} payment link(s).\n\n` +
+        `Two things do this. The key is a test key and the link is live (or the\n` +
+        `other way round) — they are separate accounts and cannot see each\n` +
+        `other. Or the link was deleted and rebuilt, in which case the sales\n` +
+        `page is pointing at a dead button and that is the real problem.\n\n` +
+        `Set STRIPE_PAYMENT_LINK_ID directly to skip this lookup.`,
+    );
+  }
+
+  throw new UnresolvablePaymentLink(
+    `${matches.length} payment links share the URL on file, so which one sells\n` +
+      `the audit is a guess: ${matches.join(', ')}.\n\n` +
+      `Refusing to guess — the next step after this one emails customers.\n` +
+      `Set STRIPE_PAYMENT_LINK_ID to the right one.`,
+  );
+}
