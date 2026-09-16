@@ -28,11 +28,30 @@ export interface ReportEmailInput {
   replyTo?: string;
 }
 
+/** The sender to use when nothing has overridden it. */
+export const DEFAULT_SENDER = 'BBA Network <audit@bbanetwork.org>';
+
+/**
+ * A setting that is present but empty is not a setting.
+ *
+ * `??` only falls through on undefined, and GitHub Actions passes an unset
+ * repository variable as the empty string — so `RESEND_FROM: ${{ vars.X }}`
+ * with no X set produced `from: ''` and a report that Resend rejected. The
+ * default existed and was unreachable from the one place it was needed.
+ */
+function setting(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
 /** Pure builder, split from the send so the payload can be tested offline. */
 export function buildReportEmail(input: ReportEmailInput): ReportEmail {
   const host = hostOf(input.siteUrl);
   const email: ReportEmail = {
-    from: input.from ?? process.env.RESEND_FROM ?? 'BBA Network <audit@bbanetwork.org>',
+    from: setting(input.from, process.env.RESEND_FROM) ?? DEFAULT_SENDER,
     to: input.to,
     subject: `Your website health check for ${host}`,
     html: [
@@ -51,7 +70,7 @@ export function buildReportEmail(input: ReportEmailInput): ReportEmail {
       },
     ],
   };
-  const replyTo = input.replyTo ?? process.env.RESEND_REPLY_TO;
+  const replyTo = setting(input.replyTo, process.env.RESEND_REPLY_TO);
   if (replyTo) email.reply_to = replyTo;
   return email;
 }

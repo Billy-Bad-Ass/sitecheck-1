@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import { buildReportEmail, hostOf, redactEmail } from './resend';
+import { buildReportEmail, DEFAULT_SENDER, hostOf, redactEmail } from './resend';
 import { isMissingObject } from './r2-ledger';
 
 test('the report email attaches the report and addresses the right host', () => {
@@ -69,4 +69,53 @@ test('a real 404 still reads as missing, despite saying "Not Found"', () => {
   // rule has to be that the error positively names the object, not that it
   // avoids a phrase.
   assert.equal(isMissingObject('Failed to fetch https://... - 404: Not Found'), true);
+});
+
+test('an unset Actions variable is not a sender address', () => {
+  // GitHub passes `${{ vars.RESEND_FROM }}` with no variable set as '', and
+  // ?? only falls through on undefined — so the default existed and was
+  // unreachable from the one place it was needed. A live run built the
+  // customer's report and then asked Resend to send it from nobody.
+  const before = process.env['RESEND_FROM'];
+  process.env['RESEND_FROM'] = '';
+  try {
+    const email = buildReportEmail({ to: 'a@b.com', siteUrl: 'https://x.com', reportHtml: '<p>hi</p>' });
+    assert.equal(email.from, DEFAULT_SENDER);
+  } finally {
+    if (before === undefined) delete process.env['RESEND_FROM'];
+    else process.env['RESEND_FROM'] = before;
+  }
+});
+
+test('a sender that is only whitespace is not a sender either', () => {
+  const before = process.env['RESEND_FROM'];
+  process.env['RESEND_FROM'] = '   ';
+  try {
+    assert.equal(
+      buildReportEmail({ to: 'a@b.com', siteUrl: 'https://x.com', reportHtml: '<p>hi</p>' }).from,
+      DEFAULT_SENDER,
+    );
+  } finally {
+    if (before === undefined) delete process.env['RESEND_FROM'];
+    else process.env['RESEND_FROM'] = before;
+  }
+});
+
+test('an empty reply-to is left off entirely, not sent as blank', () => {
+  const before = process.env['RESEND_REPLY_TO'];
+  process.env['RESEND_REPLY_TO'] = '';
+  try {
+    const email = buildReportEmail({ to: 'a@b.com', siteUrl: 'https://x.com', reportHtml: '<p>hi</p>' });
+    assert.equal(email.reply_to, undefined);
+  } finally {
+    if (before === undefined) delete process.env['RESEND_REPLY_TO'];
+    else process.env['RESEND_REPLY_TO'] = before;
+  }
+});
+
+test('an explicit sender still wins over the default', () => {
+  assert.equal(
+    buildReportEmail({ to: 'a@b.com', siteUrl: 'https://x.com', reportHtml: '<p>hi</p>', from: 'X <x@y.com>' }).from,
+    'X <x@y.com>',
+  );
 });

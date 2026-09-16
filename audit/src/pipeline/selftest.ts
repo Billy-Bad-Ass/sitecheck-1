@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { bucketName, loadLedger } from '../lib/r2-ledger';
 import { resolvePaymentLinkId, stripeClient } from '../lib/orders';
-import { sendEmail } from '../lib/resend';
+import { DEFAULT_SENDER, sendEmail } from '../lib/resend';
 
 /**
  * Prove the delivery path works, before a paying customer is the test case.
@@ -47,6 +47,30 @@ function record(name: string, ok: boolean, detail: string): void {
   log(`${ok ? 'PASS' : 'FAIL'}  ${name}\n      ${detail.replace(/\n/g, '\n      ')}\n`);
 }
 
+/**
+ * Catch a setting whose value is the instructions for finding the value.
+ *
+ * Not hypothetical: STRIPE_PAYMENT_LINK_ID was once set to "The audit's
+ * payment link id, starts plink_. Stripe -> Payment links -> open the audit
+ * one -> it's in the URL." It is an easy paste to make from a phone, and every
+ * error it causes is about something else — a credential with a curly quote in
+ * it surfaces as "Cannot convert argument to a ByteString", which names a
+ * character index and not the setting it came from.
+ *
+ * Checked by shape only. Nothing here reads or prints a secret's value.
+ */
+function looksPasted(value: string): string | null {
+  // Smart quotes, em and en dashes, arrows — the giveaway that this came from
+  // prose rather than from a dashboard's copy button. No credential contains
+  // one, so finding one is conclusive rather than suggestive.
+  const prose = value.match(/[\u2010-\u2015\u2018\u2019\u201C\u201D\u2192\u2013\u2014]/);
+  if (prose) {
+    return `contains "${prose[0]}", which no key or id does — this looks like pasted prose, not a value`;
+  }
+  if (/\s/.test(value.trim())) return 'contains spaces, so it is a sentence rather than a value';
+  return null;
+}
+
 function reason(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   // Errors here are deliberately long and instructional. The first three lines
@@ -60,6 +84,15 @@ async function checkStripe(): Promise<string | null> {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) {
     record('Stripe key', false, 'STRIPE_SECRET_KEY is not set. No payment can be seen.');
+    return null;
+  }
+  const pasted = looksPasted(key);
+  if (pasted) {
+    record('Stripe key', false, `STRIPE_SECRET_KEY ${pasted}.`);
+    return null;
+  }
+  if (!key.startsWith('sk_')) {
+    record('Stripe key', false, 'STRIPE_SECRET_KEY does not start with sk_, so it is not a Stripe secret key.');
     return null;
   }
   const mode = key.startsWith('sk_live') ? 'LIVE' : 'test';
@@ -93,13 +126,32 @@ async function checkPaymentLink(stripeKey: string | null): Promise<void> {
     );
     return;
   }
+  // Format first, and before the Stripe key is involved. A payment link check
+  // that only ever says "cannot resolve without a working Stripe key" hides a
+  // setting that is visibly wrong behind an unrelated failure.
+  const given = id || url!;
+  const pasted = looksPasted(given);
+  if (pasted) {
+    const name = id ? 'STRIPE_PAYMENT_LINK_ID' : 'STRIPE_PAYMENT_LINK';
+    record('Payment link', false, `${name} ${pasted}.`);
+    return;
+  }
+  if (!given.startsWith('plink_') && !/^https?:\/\//.test(given)) {
+    record(
+      'Payment link',
+      false,
+      `Expected a plink_ id or a https:// checkout URL. Got neither, so orders cannot be scoped.`,
+    );
+    return;
+  }
+
   if (!stripeKey) {
-    record('Payment link', false, 'Cannot resolve it without a working Stripe key.');
+    record('Payment link', false, 'Format is fine; cannot confirm it without a working Stripe key.');
     return;
   }
 
   try {
-    const resolved = await resolvePaymentLinkId(stripeClient(stripeKey), id || url!);
+    const resolved = await resolvePaymentLinkId(stripeClient(stripeKey), given);
     record('Payment link', true, `Orders scope to ${resolved}.`);
   } catch (error) {
     record('Payment link', false, reason(error));
@@ -164,7 +216,16 @@ async function checkResend(to: string | null): Promise<void> {
     return;
   }
 
-  const from = process.env.RESEND_FROM ?? 'BBA Network <audit@bbanetwork.org>';
+  const pasted = looksPasted(key);
+  if (pasted) {
+    record('Resend key', false, `RESEND_API_KEY ${pasted}.`);
+    return;
+  }
+
+  // Matches buildReportEmail: an unset Actions variable arrives as '', which
+  // is not a sender. Reading it any other way here would test a path that a
+  // real delivery never takes.
+  const from = process.env.RESEND_FROM?.trim() || DEFAULT_SENDER;
   try {
     const { id } = await sendEmail({
       from,
