@@ -147,7 +147,13 @@ jobs:
       # never the same question. This asks the second one, on demand, without
       # needing a customer to be the test case.
       - name: Self-test the delivery path
+        id: selftest
         if: inputs.self_test
+        # continue-on-error, not `|| true`: the step still goes red, so the
+        # job fails and the summary below is honest, but the reporting step
+        # gets to run and say WHICH check failed. `|| true` would make a
+        # broken delivery path look like a passing job.
+        continue-on-error: true
         run: npm run selftest -- ${{ inputs.self_test_email && format('--to {0}', inputs.self_test_email) || '' }}
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -189,15 +195,21 @@ jobs:
           agent: order-fulfilment
           project_slug: project-1
           trigger: ${{ github.event_name == 'schedule' && 'cron' || 'manual' }}
-          status: ${{ job.status == 'success' && 'ok' || 'failed' }}
+          # The self-test step is continue-on-error so that this step gets to
+          # run and name the failing check, which means job.status is still
+          # 'success' here on a self-test that failed. Reporting ok alongside
+          # a summary saying a paid audit would not be delivered is exactly
+          # the contradiction this workflow keeps being fixed for.
+          status: >-
+            ${{ (job.status == 'success' && steps.selftest.outcome != 'failure')
+                && 'ok' || 'failed' }}
           started_at: ${{ steps.start.outputs.started }}
           summary: >-
             ${{ steps.armed.outputs.armed != 'true'
                 && format('NOT ARMED — {0} is not set. Stripe was never checked, so a paid audit would go undelivered and unnoticed.', steps.armed.outputs.missing)
                 || (inputs.self_test
-                    && (job.status == 'success'
-                        && 'Self-test: the delivery path works end to end.'
-                        || 'Self-test FAILED — a paid audit would not be delivered.')
+                    && (steps.selftest.outputs.verdict
+                        || 'Self-test did not report a verdict — it died before finishing.')
                     || (job.status == 'success'
                         && 'Checked Stripe for paid audits.'
                         || 'Fulfilment run did not complete — paid audits may be undelivered.')) }}
@@ -206,6 +218,14 @@ jobs:
           dashboard_token: ${{ secrets.DASHBOARD_TOKEN }}
           access_client_id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           access_client_secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+
+      # continue-on-error above lets the reporting step run, so the job's own
+      # result has to be restored here or a failed self-test would show green.
+      - name: Fail if the self-test failed
+        if: inputs.self_test && steps.selftest.outcome == 'failure'
+        run: |
+          echo "::error title=Delivery path is broken::${{ steps.selftest.outputs.verdict }}"
+          exit 1
 
       # No artifacts, deliberately. Delivered reports are a customer's paid-for
       # property and the archive is the R2 bucket; nothing from out/ leaves

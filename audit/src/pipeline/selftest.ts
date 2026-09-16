@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { appendFile } from 'node:fs/promises';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -242,6 +243,23 @@ async function checkResend(to: string | null): Promise<void> {
   }
 }
 
+/**
+ * A one-line verdict, written where something other than a human reading a
+ * log can find it.
+ *
+ * The dashboard summary said "Self-test FAILED" and nothing else, which is
+ * the same shape of unhelpful as the green runs this whole sequence has been
+ * unpicking: true, and not enough to act on. Naming the checks means the
+ * answer to "can somebody pay me?" is on the console rather than four clicks
+ * into a workflow log.
+ */
+async function writeVerdict(line: string): Promise<void> {
+  const target = process.env.GITHUB_OUTPUT;
+  if (target) await appendFile(target, `verdict=${line}\n`, 'utf8');
+  const summary = process.env.GITHUB_STEP_SUMMARY;
+  if (summary) await appendFile(summary, `${line}\n`, 'utf8');
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const i = argv.indexOf('--to');
@@ -256,13 +274,17 @@ async function main(): Promise<void> {
 
   const failed = results.filter((r) => !r.ok);
   if (failed.length === 0) {
+    const proven = to ? 'including a real email sent' : 'email checked but not sent';
     log(`All ${results.length} checks passed.`);
     if (!to) log('Note: email was checked but not sent. Run with --to <address> to prove it.');
+    await writeVerdict(`A paid audit would be delivered — all ${results.length} checks passed, ${proven}.`);
     return;
   }
 
-  log(`${failed.length} of ${results.length} checks FAILED: ${failed.map((r) => r.name).join(', ')}`);
+  const names = failed.map((r) => r.name).join(', ');
+  log(`${failed.length} of ${results.length} checks FAILED: ${names}`);
   log('A paid audit would not be delivered.');
+  await writeVerdict(`A paid audit would NOT be delivered. Failing: ${names}.`);
   process.exitCode = 1;
 }
 
