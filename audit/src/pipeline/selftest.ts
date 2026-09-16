@@ -74,10 +74,20 @@ function looksPasted(value: string): string | null {
 
 function reason(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  const lines = message.trim().split('\n');
+
   // Errors here are deliberately long and instructional. The first three lines
-  // carry the diagnosis; the rest is the remedy, which belongs in the docs and
-  // not in a summary line.
-  return message.trim().split('\n').slice(0, 3).join('\n');
+  // carry the diagnosis and the rest is the remedy, which belongs in the docs.
+  //
+  // But loadLedger appends the ACTUAL error from wrangler at the very end,
+  // under "Underlying error:", and that tail is the whole difference between
+  // "the bucket is missing" and "this token cannot see the bucket" — two
+  // problems with nothing in common except the sentence in front of them.
+  // Truncating to three lines threw away the only part that says which.
+  const cause = lines.findIndex((line) => /^underlying error:/i.test(line.trim()));
+  const head = lines.slice(0, 3);
+  if (cause === -1) return head.join('\n');
+  return [...head, ...lines.slice(cause)].join('\n');
 }
 
 /** 1. Stripe. Mode matters as much as presence: keys are per-account. */
@@ -168,6 +178,18 @@ async function checkPaymentLink(stripeKey: string | null): Promise<void> {
  * before the ledger records it. The next run re-delivers.
  */
 async function checkLedger(): Promise<void> {
+  // Same check as the other three credentials. Three of the four settings on
+  // this path turned out to hold the instructions for finding them rather
+  // than the value; leaving one unchecked is leaving one that fails silently.
+  const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
+  if (token) {
+    const pasted = looksPasted(token);
+    if (pasted) {
+      record('R2 ledger readable', false, `CLOUDFLARE_API_TOKEN ${pasted}.`);
+      return;
+    }
+  }
+
   try {
     const ledger = await loadLedger();
     record('R2 ledger readable', true, `${Object.keys(ledger).length} delivered order(s) on record.`);

@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { buildReportEmail, DEFAULT_SENDER, hostOf, redactEmail } from './resend';
-import { isMissingObject } from './r2-ledger';
+import { isMissingObject, wranglerCause } from './r2-ledger';
 
 test('the report email attaches the report and addresses the right host', () => {
   const email = buildReportEmail({
@@ -118,4 +118,37 @@ test('an explicit sender still wins over the default', () => {
     buildReportEmail({ to: 'a@b.com', siteUrl: 'https://x.com', reportHtml: '<p>hi</p>', from: 'X <x@y.com>' }).from,
     'X <x@y.com>',
   );
+});
+
+test('the underlying cause survives wrangler\'s log-path boilerplate', () => {
+  // wrangler's last three lines are always a blank one and "Logs were written
+  // to ...", so taking the tail returned the only part of the message
+  // carrying no information — inside the error whose entire job is to say
+  // whether the bucket is missing or the token cannot see it.
+  const stderrText = [
+    '\u001b[33m▲ [WARNING] Proxy environment variables detected.\u001b[0m',
+    '',
+    "\u001b[31m✘ [ERROR]\u001b[0m The specified bucket does not exist.",
+    '',
+    '🪵  Logs were written to "/root/.config/.wrangler/logs/wrangler-2026-09-16.log"',
+  ].join('\n');
+
+  const cause = wranglerCause(stderrText);
+  assert.match(cause, /specified bucket does not exist/);
+  assert.doesNotMatch(cause, /Logs were written to/, 'the log path says nothing');
+  assert.doesNotMatch(cause, /\u001b/, 'colour codes make it unreadable wherever it lands');
+});
+
+test('a warning is not mistaken for the cause when a real error is present', () => {
+  const stderrText = [
+    '▲ [WARNING] Proxy environment variables detected.',
+    '✘ [ERROR] Authentication error [code: 10000]',
+    '🪵  Logs were written to "/tmp/x.log"',
+  ].join('\n');
+  assert.match(wranglerCause(stderrText), /Authentication error/);
+});
+
+test('output with nothing error-shaped still yields something sayable', () => {
+  // Better a line of wrangler's own words than an empty "Underlying error:".
+  assert.equal(wranglerCause('\n\n🪵  Logs were written to "/tmp/x.log"\n'), '(wrangler said nothing)');
 });
