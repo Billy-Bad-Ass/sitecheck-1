@@ -30,10 +30,35 @@ export function bucketName(): string {
   return process.env.FULFILMENT_BUCKET?.trim() || 'bba-audit-fulfilment';
 }
 
+/**
+ * Credentials with the whitespace taken off.
+ *
+ * A GitHub secret keeps whatever was pasted into it, and a value copied out of
+ * a dashboard very often arrives with a trailing newline. Nothing shows it:
+ * the value is masked in logs, `.trim()` in our own checks hides it from us
+ * too, and the only symptom is Cloudflare rejecting an account id that is
+ * correct — the error even comes back with its quote unclosed, because the
+ * newline is inside it.
+ *
+ * Whitespace around a credential is never meaningful, so this strips it rather
+ * than making somebody find an invisible character in a box they cannot read
+ * back. Only these two are touched: everything else in the environment is
+ * passed through untouched.
+ */
+function wranglerEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']) {
+    const value = env[name];
+    if (typeof value === 'string') env[name] = value.trim();
+  }
+  return env;
+}
+
 function wrangler(args: string[], input?: string): string {
   return execFileSync('npx', ['wrangler', ...args], {
     encoding: 'utf8',
     input,
+    env: wranglerEnv(),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 }

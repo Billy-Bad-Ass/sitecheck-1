@@ -57,8 +57,24 @@ const SHAPES: Array<{ name: string; prefix?: string; pattern?: RegExp; expected:
 export function malformedCredentials(env: NodeJS.ProcessEnv = process.env): string[] {
   const problems: string[] = [];
   for (const shape of SHAPES) {
-    const value = env[shape.name]?.trim();
+    const raw = env[shape.name];
+    if (raw === undefined) continue;
+    const value = raw.trim();
     if (!value) continue;
+
+    // Padding is invisible everywhere it matters. The secret is masked in
+    // logs, the box it was pasted into does not read back, and every check we
+    // write trims before testing — so a correct value with a newline on the
+    // end looks right to us and wrong to whatever receives it. Reported
+    // rather than silently tolerated, because the same value is also passed
+    // to tools this repository does not control.
+    if (raw !== value) {
+      problems.push(
+        `${shape.name} has a line break or spaces around it — the value is otherwise the right shape, ` +
+          `so it was probably pasted with a stray newline`,
+      );
+      continue;
+    }
 
     const pasted = looksPasted(value);
     if (pasted) {
