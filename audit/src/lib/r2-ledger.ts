@@ -66,6 +66,33 @@ export function isMissingObject(stderrText: string): boolean {
   return /nosuchkey|specified key does not exist|\b404\b/i.test(stderrText);
 }
 
+/**
+ * The part of wrangler's output that says what actually went wrong.
+ *
+ * Its last three lines are always a blank line and "Logs were written to
+ * /root/.config/.wrangler/logs/...", so taking the tail reliably returned the
+ * one part of the message carrying no information — and the difference
+ * between "that bucket does not exist" and "this token cannot see it" was
+ * dropped every time, in the error whose whole job is to say which.
+ *
+ * ANSI colour codes are stripped because wrangler emits them even when not on
+ * a terminal, and they make the result unreadable wherever it is printed.
+ */
+export function wranglerCause(stderrText: string): string {
+  const lines = stderrText
+    // eslint-disable-next-line no-control-regex
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .filter((line) => !/^🪵/.test(line))
+    .filter((line) => !/logs were written to/i.test(line));
+
+  const errors = lines.filter((line) => /error|✘|refus|denied|not found|does not exist/i.test(line));
+  const chosen = errors.length > 0 ? errors : lines;
+  return chosen.slice(-3).join('\n') || '(wrangler said nothing)';
+}
+
 export async function loadLedger(): Promise<Ledger> {
   try {
     const raw = wrangler(['r2', 'object', 'get', `${bucketName()}/${LEDGER_KEY}`, '--pipe', '--remote']);
@@ -78,7 +105,7 @@ export async function loadLedger(): Promise<Ledger> {
         `Refusing to continue: an unreadable ledger treated as empty would re-deliver every order.\n` +
         `Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (or wrangler login), and make sure the bucket exists:\n` +
         `  npx wrangler r2 bucket create ${bucketName()}\n` +
-        `Underlying error: ${stderrText.trim().split('\n').slice(-3).join('\n')}`,
+        `Underlying error: ${wranglerCause(stderrText)}`,
     );
   }
 }
