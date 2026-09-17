@@ -99,3 +99,16 @@ test('a value that is neither a URL nor an id is rejected before Stripe is calle
   await assert.rejects(() => resolvePaymentLinkId(stripe, 'the audit one'), UnresolvablePaymentLink);
   assert.equal(called, false, 'should not have queried Stripe');
 });
+
+test('an account id that is prose, or the wrong length, is caught by shape', () => {
+  // wrangler's own answer is `Invalid account ID "***"` — masked in a public
+  // log, so the run that reported it could say the value was wrong and not
+  // what was wrong with it. These two shapes cover both real mistakes: the
+  // description pasted instead of the value, and a truncated copy.
+  const ACCOUNT = /^[0-9a-f]{32}$/i;
+  assert.equal(ACCOUNT.test('0123456789abcdef0123456789abcdef'), true);
+  assert.equal(ACCOUNT.test('my account id is in the dashboard'), false);
+  assert.equal(ACCOUNT.test('abc123'), false);
+  // 32 characters but not hex — a real length with the wrong alphabet.
+  assert.equal(ACCOUNT.test('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'), false);
+});

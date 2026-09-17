@@ -190,6 +190,25 @@ async function checkLedger(): Promise<void> {
     }
   }
 
+  // The account id is a 32-character hex string and nothing else. Checked here
+  // because wrangler's answer — `Invalid account ID "***"` — is masked in a
+  // public log, so the one run that reported it could say the value was wrong
+  // and not what was wrong with it. Naming the shape costs nothing and does
+  // not print the value.
+  const account = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  if (account && !/^[0-9a-f]{32}$/i.test(account)) {
+    const pasted = looksPasted(account);
+    record(
+      'R2 ledger readable',
+      false,
+      pasted
+        ? `CLOUDFLARE_ACCOUNT_ID ${pasted}.`
+        : `CLOUDFLARE_ACCOUNT_ID is ${account.length} characters; an account id is 32 hex characters.\n` +
+            `It is in the dashboard URL: dash.cloudflare.com/<account id>/...`,
+    );
+    return;
+  }
+
   try {
     const ledger = await loadLedger();
     record('R2 ledger readable', true, `${Object.keys(ledger).length} delivered order(s) on record.`);
