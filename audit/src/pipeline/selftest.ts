@@ -248,19 +248,28 @@ async function checkResend(to: string | null): Promise<void> {
     record('Resend key', false, 'RESEND_API_KEY is not set. Reports would be built and never sent.');
     return;
   }
+  // Shape first, and BEFORE the no-address branch below. It used to come
+  // after, so a run without --to reported this key as fine while holding the
+  // pasted instructions — which is the whole failure this file exists to
+  // catch, rebuilt inside the thing catching it. The check that only works
+  // when you ask it the expensive way is not a check.
+  const pasted = looksPasted(key);
+  if (pasted) {
+    record('Resend key', false, `RESEND_API_KEY ${pasted}.`);
+    return;
+  }
+  if (!key.startsWith('re_')) {
+    record('Resend key', false, 'RESEND_API_KEY does not start with re_, so it is not a Resend key.');
+    return;
+  }
+
   if (!to) {
     record(
       'Resend key',
       true,
-      'Present, but NOT proven. A key can be valid and still bounce from an\n' +
+      'The right shape, but NOT proven. A valid key still bounces from an\n' +
         'unverified sender domain. Re-run with --to <address> to send one real email.',
     );
-    return;
-  }
-
-  const pasted = looksPasted(key);
-  if (pasted) {
-    record('Resend key', false, `RESEND_API_KEY ${pasted}.`);
     return;
   }
 

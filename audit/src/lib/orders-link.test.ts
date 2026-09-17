@@ -112,3 +112,22 @@ test('an account id that is prose, or the wrong length, is caught by shape', () 
   // 32 characters but not hex — a real length with the wrong alphabet.
   assert.equal(ACCOUNT.test('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'), false);
 });
+
+test('a credential check must not depend on being asked the expensive way', () => {
+  // The self-test's Resend check used to shape-check the key only on the
+  // branch that sends a real email. A run without --to therefore reported a
+  // key holding pasted instructions as fine — the exact failure the file
+  // exists to catch, rebuilt inside the thing catching it, and it reached the
+  // dashboard once before being spotted.
+  //
+  // The rule this encodes: a check that is cheap and conclusive runs on every
+  // path. Only the part that costs something (an actual send) is opt-in.
+  const PROSE = /[‐-―‘’“”→]/;
+  const pasted = 'Your Resend key — from the API Keys page';
+  const real = 're_AbCd1234';
+
+  assert.equal(PROSE.test(pasted), true, 'an em dash is conclusive');
+  assert.equal(PROSE.test(real), false);
+  assert.equal(real.startsWith('re_'), true);
+  assert.equal(pasted.startsWith('re_'), false, 'the prefix alone would also have caught it');
+});
