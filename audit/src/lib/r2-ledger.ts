@@ -190,6 +190,36 @@ export async function saveLedger(ledger: Ledger): Promise<void> {
   ]);
 }
 
+/**
+ * Prove the bucket is writable, and leave nothing behind.
+ *
+ * Lives here rather than in the caller because this is the only file that
+ * knows how to invoke wrangler — which includes knowing that the credentials
+ * have to be trimmed first. The self-test had its own copy calling
+ * execFileSync directly, so the read went through the trimming and the write
+ * did not: same bucket, same token, same account id, one working and one
+ * reporting "Invalid account ID". A second way to run the same tool is a
+ * second set of rules to keep in step, and these two were already out of step
+ * the day they were written.
+ *
+ * Write permission is checked separately from read for a reason. A token that
+ * can read and not write passes a read check, then fails at the last step of a
+ * real delivery — after the customer's report has been emailed and before the
+ * ledger records it — so the next run sends it again.
+ */
+export async function probeBucketWrite(): Promise<void> {
+  const key = `selftest/probe-${Date.now()}.txt`;
+  const dir = await mkdtemp(join(tmpdir(), 'selftest-'));
+  const file = join(dir, 'probe.txt');
+  await writeFile(file, 'Delivery path self-test. Safe to delete.\n', 'utf8');
+
+  wrangler(['r2', 'object', 'put', `${bucketName()}/${key}`, '--file', file, '--content-type', 'text/plain', '--remote']);
+  // Written under selftest/ and removed immediately, so a failed cleanup
+  // leaves something obviously disposable rather than anything near the
+  // delivered reports.
+  wrangler(['r2', 'object', 'delete', `${bucketName()}/${key}`, '--remote']);
+}
+
 /** Archives a delivered report under delivered/, never into the repository. */
 export async function archiveReport(fileName: string, localPath: string): Promise<string> {
   const key = `delivered/${fileName}`;
