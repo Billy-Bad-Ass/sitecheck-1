@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { auditSite } from '../lib/audit';
 import { PageFetcher } from '../lib/fetch-page';
-import { malformedCredentials } from '../lib/credentials';
+import { malformedCredentials, paddedCredentials } from '../lib/credentials';
 import { fetchPaidOrders, resolvePaymentLinkId, stripeClient } from '../lib/orders';
 import { archiveReport, loadLedger, saveLedger } from '../lib/r2-ledger';
 import { buildReportEmail, redactEmail, sendEmail } from '../lib/resend';
@@ -86,6 +86,9 @@ async function main(): Promise<void> {
   // be undelivered, because nothing can even read the ledger. Seventy rows a
   // day of that teaches whoever reads the dashboard to skip red rows, which
   // is what a real failure will need them not to do.
+  // Said once, and never a reason to stop: every consumer here trims first.
+  for (const note of paddedCredentials()) log(`  NOTE: ${note}`);
+
   const malformed = malformedCredentials();
   if (malformed.length > 0) {
     for (const problem of malformed) log(`  ${problem}`);

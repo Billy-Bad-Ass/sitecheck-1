@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import { looksPasted, malformedCredentials } from './credentials';
+import { looksPasted, malformedCredentials, paddedCredentials } from './credentials';
 
 /**
  * Every setting on the audit delivery path has been set, at least once, to the
@@ -63,20 +63,34 @@ test('nothing reported ever contains a credential that was well-formed', () => {
   for (const problem of problems) assert.doesNotMatch(problem, /NeverPrintMe/);
 });
 
-test('a correct value with a stray newline is named, not waved through', () => {
-  // The one that cost an evening. Cloudflare rejected an account id that was
-  // correct, because the secret kept the newline from whatever it was copied
-  // out of. Masked in logs, unreadable in the settings box, and invisible to
-  // every check we write — because they all trim before testing.
-  const problems = malformedCredentials({ CLOUDFLARE_ACCOUNT_ID: '0123456789abcdef0123456789abcdef\n' });
-  assert.equal(problems.length, 1);
-  assert.match(problems[0]!, /line break or spaces around it/);
-  assert.match(problems[0]!, /otherwise the right shape/, 'must not read as "your value is wrong"');
+test('a correct value with a stray newline does NOT block the run', () => {
+  // This cost a night of deliveries. Padding was treated as fatal, so the
+  // scheduled run refused to start — on a value every consumer here already
+  // trims before use. The delivery path was working and the thing that runs
+  // it was blocking itself, which is worse than the silence this whole
+  // sequence set out to fix: a customer pays, everything is capable of
+  // serving them, and nothing does.
+  const padded = '0123456789abcdef0123456789abcdef\n';
+  assert.deepEqual(malformedCredentials({ CLOUDFLARE_ACCOUNT_ID: padded }), []);
+
+  const notes = paddedCredentials({ CLOUDFLARE_ACCOUNT_ID: padded });
+  assert.equal(notes.length, 1);
+  assert.match(notes[0]!, /line break or spaces around it/);
+  assert.match(notes[0]!, /Harmless here/, 'must not read as "your value is wrong"');
 });
 
-test('padding is reported for keys too, not just the account id', () => {
-  assert.equal(malformedCredentials({ STRIPE_SECRET_KEY: ' sk_live_51AbCd ' }).length, 1);
-  assert.equal(malformedCredentials({ RESEND_API_KEY: 're_AbCd1234\n' }).length, 1);
+test('padding is noticed on keys too, not just the account id', () => {
+  assert.equal(paddedCredentials({ STRIPE_SECRET_KEY: ' sk_live_51AbCd ' }).length, 1);
+  assert.equal(paddedCredentials({ RESEND_API_KEY: 're_AbCd1234\n' }).length, 1);
+  assert.deepEqual(malformedCredentials({ RESEND_API_KEY: 're_AbCd1234\n' }), [], 'still not a blocker');
+});
+
+test('a padded value is still shape-checked once trimmed', () => {
+  // Padding used to short-circuit the shape check, so a value that was BOTH
+  // padded and wrong reported only the padding — the harmless half.
+  const problems = malformedCredentials({ CLOUDFLARE_ACCOUNT_ID: '  abc123  ' });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0]!, /6 characters/);
 });
 
 test('the clean values still pass', () => {
@@ -90,17 +104,11 @@ test('the clean values still pass', () => {
   );
 });
 
-test('padding is reported once, not twice with a shape complaint', () => {
-  // A padded value that is ALSO the wrong shape should say one thing. Two
-  // messages about one setting sends somebody fixing the wrong half.
-  const problems = malformedCredentials({ CLOUDFLARE_ACCOUNT_ID: ' abc123 ' });
-  assert.equal(problems.length, 1);
-});
-
 test('an empty-after-trim value is treated as unset, not as padded', () => {
   // GitHub passes an unset variable as ''. Reporting that as "has spaces
   // around it" would be a confident answer to a question nobody asked.
   assert.deepEqual(malformedCredentials({ RESEND_API_KEY: '   ' }), []);
+  assert.deepEqual(paddedCredentials({ RESEND_API_KEY: '   ' }), []);
 });
 
 test('nothing outside r2-ledger.ts invokes wrangler directly', async () => {

@@ -62,19 +62,6 @@ export function malformedCredentials(env: NodeJS.ProcessEnv = process.env): stri
     const value = raw.trim();
     if (!value) continue;
 
-    // Padding is invisible everywhere it matters. The secret is masked in
-    // logs, the box it was pasted into does not read back, and every check we
-    // write trims before testing — so a correct value with a newline on the
-    // end looks right to us and wrong to whatever receives it. Reported
-    // rather than silently tolerated, because the same value is also passed
-    // to tools this repository does not control.
-    if (raw !== value) {
-      problems.push(
-        `${shape.name} has a line break or spaces around it — the value is otherwise the right shape, ` +
-          `so it was probably pasted with a stray newline`,
-      );
-      continue;
-    }
 
     const pasted = looksPasted(value);
     if (pasted) {
@@ -90,4 +77,34 @@ export function malformedCredentials(env: NodeJS.ProcessEnv = process.env): stri
     }
   }
   return problems;
+}
+
+/**
+ * Settings whose value carries stray whitespace.
+ *
+ * Deliberately NOT part of malformedCredentials, and that distinction cost a
+ * night of deliveries to learn. Padding was treated as fatal, so the scheduled
+ * run refused to start — on a value every consumer here already trims before
+ * use. The delivery path was working and the thing that runs it was blocking
+ * itself, which is worse than the silence this whole sequence set out to fix:
+ * a customer pays, everything is capable of serving them, and nothing does.
+ *
+ * So it is a note, not a blocker. Worth saying, because the same secret is
+ * read by tools outside this repository; not worth stopping for, because
+ * nothing inside it is affected.
+ */
+export function paddedCredentials(env: NodeJS.ProcessEnv = process.env): string[] {
+  const padded: string[] = [];
+  for (const shape of SHAPES) {
+    const raw = env[shape.name];
+    if (typeof raw !== 'string') continue;
+    const value = raw.trim();
+    if (value !== '' && raw !== value) {
+      padded.push(
+        `${shape.name} has a line break or spaces around it. Harmless here — every use of it ` +
+          `trims first — but worth re-pasting cleanly`,
+      );
+    }
+  }
+  return padded;
 }
