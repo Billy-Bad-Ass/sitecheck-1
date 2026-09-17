@@ -102,3 +102,35 @@ test('an empty-after-trim value is treated as unset, not as padded', () => {
   // around it" would be a confident answer to a question nobody asked.
   assert.deepEqual(malformedCredentials({ RESEND_API_KEY: '   ' }), []);
 });
+
+test('nothing outside r2-ledger.ts invokes wrangler directly', async () => {
+  // The read went through the helper that trims the credentials; the write
+  // probe called execFileSync itself and did not. Same bucket, same token,
+  // same account id — one worked, the other reported "Invalid account ID",
+  // and the conclusion drawn from that was that the token lacked write
+  // permission. It did not.
+  //
+  // One file knows how to invoke wrangler. A second way to run the same tool
+  // is a second set of rules to keep in step, and these two were out of step
+  // from the day they were written.
+  const { readdir, readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+
+  const offenders: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(path);
+        continue;
+      }
+      if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue;
+      if (path.endsWith(join('lib', 'r2-ledger.ts'))) continue;
+      const source = await readFile(path, 'utf8');
+      if (/['"`]wrangler['"`]/.test(source)) offenders.push(path);
+    }
+  };
+  await walk(join(process.cwd(), 'src'));
+
+  assert.deepEqual(offenders, [], `these invoke wrangler outside r2-ledger.ts: ${offenders.join(', ')}`);
+});

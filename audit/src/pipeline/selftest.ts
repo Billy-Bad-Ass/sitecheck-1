@@ -1,10 +1,6 @@
-import { execFileSync } from 'node:child_process';
 import { appendFile } from 'node:fs/promises';
-import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
-import { bucketName, loadLedger, remedyFor, wranglerCause } from '../lib/r2-ledger';
+import { loadLedger, probeBucketWrite, remedyFor, wranglerCause } from '../lib/r2-ledger';
 import { resolvePaymentLinkId, stripeClient } from '../lib/orders';
 import { looksPasted } from '../lib/credentials';
 import { DEFAULT_SENDER, sendEmail } from '../lib/resend';
@@ -194,23 +190,10 @@ async function checkLedger(): Promise<void> {
     return;
   }
 
-  const key = `selftest/probe-${Date.now()}.txt`;
   try {
-    const dir = await mkdtemp(join(tmpdir(), 'selftest-'));
-    const file = join(dir, 'probe.txt');
-    await writeFile(file, 'Delivery path self-test. Safe to delete.\n', 'utf8');
-    const run = (args: string[]) =>
-      execFileSync('npx', ['wrangler', ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-    run(['r2', 'object', 'put', `${bucketName()}/${key}`, '--file', file, '--content-type', 'text/plain', '--remote']);
-    // Written under selftest/ and removed immediately, so a failed cleanup
-    // leaves something obviously disposable rather than anything near the
-    // delivered reports.
-    run(['r2', 'object', 'delete', `${bucketName()}/${key}`, '--remote']);
+    await probeBucketWrite();
     record('R2 ledger writable', true, 'Wrote and deleted a probe object.');
   } catch (error) {
-    // The same tail-truncation that was fixed in loadLedger was still here,
-    // so this check reported the path to a log file instead of the reason —
-    // in the one place where the reason is the entire output.
     const stderrText = String((error as { stderr?: string }).stderr ?? error);
     const remedy = remedyFor(stderrText);
     record(
