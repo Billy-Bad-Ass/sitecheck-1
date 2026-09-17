@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { bucketName, loadLedger } from '../lib/r2-ledger';
 import { resolvePaymentLinkId, stripeClient } from '../lib/orders';
+import { looksPasted } from '../lib/credentials';
 import { DEFAULT_SENDER, sendEmail } from '../lib/resend';
 
 /**
@@ -46,30 +47,6 @@ const results: Check[] = [];
 function record(name: string, ok: boolean, detail: string): void {
   results.push({ name, ok, detail });
   log(`${ok ? 'PASS' : 'FAIL'}  ${name}\n      ${detail.replace(/\n/g, '\n      ')}\n`);
-}
-
-/**
- * Catch a setting whose value is the instructions for finding the value.
- *
- * Not hypothetical: STRIPE_PAYMENT_LINK_ID was once set to "The audit's
- * payment link id, starts plink_. Stripe -> Payment links -> open the audit
- * one -> it's in the URL." It is an easy paste to make from a phone, and every
- * error it causes is about something else — a credential with a curly quote in
- * it surfaces as "Cannot convert argument to a ByteString", which names a
- * character index and not the setting it came from.
- *
- * Checked by shape only. Nothing here reads or prints a secret's value.
- */
-function looksPasted(value: string): string | null {
-  // Smart quotes, em and en dashes, arrows — the giveaway that this came from
-  // prose rather than from a dashboard's copy button. No credential contains
-  // one, so finding one is conclusive rather than suggestive.
-  const prose = value.match(/[\u2010-\u2015\u2018\u2019\u201C\u201D\u2192\u2013\u2014]/);
-  if (prose) {
-    return `contains "${prose[0]}", which no key or id does — this looks like pasted prose, not a value`;
-  }
-  if (/\s/.test(value.trim())) return 'contains spaces, so it is a sentence rather than a value';
-  return null;
 }
 
 function reason(error: unknown): string {
