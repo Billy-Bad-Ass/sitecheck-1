@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
 import { buildReportEmail, DEFAULT_SENDER, hostOf, redactEmail } from './resend';
-import { isMissingObject, wranglerCause } from './r2-ledger';
+import { isMissingObject, remedyFor, wranglerCause } from './r2-ledger';
 
 test('the report email attaches the report and addresses the right host', () => {
   const email = buildReportEmail({
@@ -151,4 +151,37 @@ test('a warning is not mistaken for the cause when a real error is present', () 
 test('output with nothing error-shaped still yields something sayable', () => {
   // Better a line of wrangler's own words than an empty "Underlying error:".
   assert.equal(wranglerCause('\n\n🪵  Logs were written to "/tmp/x.log"\n'), '(wrangler said nothing)');
+});
+
+test('a 403 from R2 points at the token permission, not the bucket or the id', () => {
+  // The real one, after the account id was already correct. All three R2
+  // failures arrive as a wall of wrangler output with a status in it, and the
+  // generic advice listed all three remedies at once — which is how an
+  // evening goes on a bucket that already existed and an id that was right.
+  const stderrText = [
+    '✘ [ERROR] Failed to fetch /accounts/abc/r2/buckets/bba-audit-fulfilment/objects/ledger.json - 403: Forbidden;',
+    '{"success":false,"errors":[{"code":10000,"message":"Authentication error"}]}',
+  ].join('\n');
+
+  const remedy = remedyFor(stderrText);
+  assert.match(remedy ?? '', /Workers R2 Storage/);
+  assert.match(remedy ?? '', /both accepted/, 'must say the id and token are NOT the problem');
+  assert.doesNotMatch(remedy ?? '', /bucket create/, 'the bucket is not the problem here');
+});
+
+test('an unrecognised account id points at the account id, and mentions the newline trap', () => {
+  const remedy = remedyFor('✘ [ERROR] Invalid account ID "abc"');
+  assert.match(remedy ?? '', /CLOUDFLARE_ACCOUNT_ID/);
+  assert.match(remedy ?? '', /line break/);
+});
+
+test('a missing bucket points at creating the bucket', () => {
+  const remedy = remedyFor('✘ [ERROR] The specified bucket does not exist');
+  assert.match(remedy ?? '', /bucket create/);
+});
+
+test('an unrecognised failure gets no invented remedy', () => {
+  // Silence beats a confident wrong answer: the caller falls back to the
+  // general advice, which at least does not send somebody to the wrong screen.
+  assert.equal(remedyFor('✘ [ERROR] something nobody has seen before'), null);
 });

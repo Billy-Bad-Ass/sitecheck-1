@@ -118,6 +118,46 @@ export function wranglerCause(stderrText: string): string {
   return chosen.slice(-3).join('\n') || '(wrangler said nothing)';
 }
 
+/**
+ * Turn Cloudflare's answer into the thing to go and change.
+ *
+ * Three failures reach this code and they read almost identically — all three
+ * arrive as a wall of wrangler output with an HTTP status in it — while having
+ * nothing in common as remedies. The generic advice ("set the token, set the
+ * account id, create the bucket") lists all three at once, which is how an
+ * evening goes on a missing bucket that already existed and an account id that
+ * was already right.
+ */
+export function remedyFor(stderrText: string): string | null {
+  const cause = wranglerCause(stderrText);
+
+  // A 403 with code 10000 on an /r2/ path means the account id and the token
+  // were both accepted and the token simply is not allowed to touch R2. It is
+  // one permission on one token, and nothing about the bucket or the id.
+  if (/\b403\b|authentication error|code.{0,3}10000/i.test(cause)) {
+    return (
+      'The account and token were both accepted; the token is not permitted to use R2.\n' +
+      'Add "Workers R2 Storage: Edit" to the token in Cloudflare > Manage Account >\n' +
+      'Account API Tokens, or issue a new token with it. Nothing about the bucket or\n' +
+      'the account id needs changing.'
+    );
+  }
+
+  if (/invalid account id/i.test(cause)) {
+    return (
+      'Cloudflare does not recognise CLOUDFLARE_ACCOUNT_ID. It is 32 hex characters and\n' +
+      'appears in the dashboard URL. A value that looks right can still fail this way if\n' +
+      'it was pasted with a line break on the end.'
+    );
+  }
+
+  if (/bucket/i.test(cause) && /not (found|exist)|does not exist|404/i.test(cause)) {
+    return `The bucket does not exist. Create it: npx wrangler r2 bucket create ${bucketName()}`;
+  }
+
+  return null;
+}
+
 export async function loadLedger(): Promise<Ledger> {
   try {
     const raw = wrangler(['r2', 'object', 'get', `${bucketName()}/${LEDGER_KEY}`, '--pipe', '--remote']);
@@ -125,11 +165,14 @@ export async function loadLedger(): Promise<Ledger> {
   } catch (error) {
     const stderrText = String((error as { stderr?: string }).stderr ?? error);
     if (isMissingObject(stderrText)) return {};
+    const remedy =
+      remedyFor(stderrText) ??
+      `Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (or wrangler login), and make sure the bucket exists:\n` +
+        `  npx wrangler r2 bucket create ${bucketName()}`;
     throw new Error(
       `Could not read the fulfilment ledger from r2://${bucketName()}/${LEDGER_KEY}.\n` +
         `Refusing to continue: an unreadable ledger treated as empty would re-deliver every order.\n` +
-        `Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (or wrangler login), and make sure the bucket exists:\n` +
-        `  npx wrangler r2 bucket create ${bucketName()}\n` +
+        `${remedy}\n` +
         `Underlying error: ${wranglerCause(stderrText)}`,
     );
   }
