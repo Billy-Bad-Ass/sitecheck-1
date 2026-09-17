@@ -185,3 +185,19 @@ test('an unrecognised failure gets no invented remedy', () => {
   // general advice, which at least does not send somebody to the wrong screen.
   assert.equal(remedyFor('✘ [ERROR] something nobody has seen before'), null);
 });
+
+test('a read-only R2 token is named as such, not left as a log path', () => {
+  // The write probe kept the tail-truncation that loadLedger had already been
+  // fixed for, so it reported the path to a wrangler log file in the one
+  // place where the error text IS the answer. A token with Read where Edit
+  // was needed reads fine and fails to write — which is exactly the state
+  // that re-delivers a report the ledger never recorded.
+  const stderrText = [
+    '✘ [ERROR] Failed to fetch /accounts/abc/r2/buckets/bba-audit-fulfilment/objects/probe - 403: Forbidden;',
+    '{"success":false,"errors":[{"code":10000,"message":"Authentication error"}]}',
+    '🪵  Logs were written to "/home/runner/.config/.wrangler/logs/wrangler.log"',
+  ].join('\n');
+
+  assert.doesNotMatch(wranglerCause(stderrText), /wrangler\.log/, 'the log path is not the answer');
+  assert.match(remedyFor(stderrText) ?? '', /Workers R2 Storage/);
+});

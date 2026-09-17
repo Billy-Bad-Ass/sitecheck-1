@@ -4,7 +4,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { bucketName, loadLedger } from '../lib/r2-ledger';
+import { bucketName, loadLedger, remedyFor, wranglerCause } from '../lib/r2-ledger';
 import { resolvePaymentLinkId, stripeClient } from '../lib/orders';
 import { looksPasted } from '../lib/credentials';
 import { DEFAULT_SENDER, sendEmail } from '../lib/resend';
@@ -208,12 +208,18 @@ async function checkLedger(): Promise<void> {
     run(['r2', 'object', 'delete', `${bucketName()}/${key}`, '--remote']);
     record('R2 ledger writable', true, 'Wrote and deleted a probe object.');
   } catch (error) {
+    // The same tail-truncation that was fixed in loadLedger was still here,
+    // so this check reported the path to a log file instead of the reason —
+    // in the one place where the reason is the entire output.
     const stderrText = String((error as { stderr?: string }).stderr ?? error);
+    const remedy = remedyFor(stderrText);
     record(
       'R2 ledger writable',
       false,
       'Could not write to the bucket. A delivery would email the report and then fail\n' +
-        `to record it, so the next run would send it again. ${stderrText.trim().split('\n').slice(-2).join(' ')}`,
+        'to record it, so the next run would send it again.\n' +
+        (remedy ? `${remedy}\n` : '') +
+        `Underlying error: ${wranglerCause(stderrText)}`,
     );
   }
 }
