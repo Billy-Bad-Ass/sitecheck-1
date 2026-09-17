@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { auditSite } from '../lib/audit';
 import { PageFetcher } from '../lib/fetch-page';
+import { malformedCredentials } from '../lib/credentials';
 import { fetchPaidOrders, resolvePaymentLinkId, stripeClient } from '../lib/orders';
 import { archiveReport, loadLedger, saveLedger } from '../lib/r2-ledger';
 import { buildReportEmail, redactEmail, sendEmail } from '../lib/resend';
@@ -58,6 +59,12 @@ async function mirrorLedgerLocally(ledger: Ledger): Promise<void> {
   await writeFile(join(OUT, 'fulfilled.json'), JSON.stringify(ledger, null, 2), 'utf8');
 }
 
+/** One line for the dashboard, via the step's output. Same as the self-test. */
+async function writeVerdict(line: string): Promise<void> {
+  const target = process.env.GITHUB_OUTPUT;
+  if (target) await appendFile(target, `verdict=${line}\n`, 'utf8');
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
@@ -68,6 +75,27 @@ async function main(): Promise<void> {
     log('STRIPE_SECRET_KEY is not set — no orders can exist yet. Nothing to do.');
     log('Set it (restricted READ scopes only) as a repo secret to arm fulfilment.');
     return;
+  }
+
+  // Stop on a credential that cannot work, before dialling anything.
+  //
+  // Without this the run died further in, at whichever call happened to use
+  // the bad value first, and the dashboard got "Fulfilment run did not
+  // complete — paid audits may be undelivered" every twenty minutes. True,
+  // unactionable, and wrong in its implication: there are no paid audits to
+  // be undelivered, because nothing can even read the ledger. Seventy rows a
+  // day of that teaches whoever reads the dashboard to skip red rows, which
+  // is what a real failure will need them not to do.
+  const malformed = malformedCredentials();
+  if (malformed.length > 0) {
+    for (const problem of malformed) log(`  ${problem}`);
+    // The reason has to reach the dashboard, not just this log. A red row
+    // that does not say why is what made the previous seventy a day useless.
+    await writeVerdict(`Cannot run: ${malformed.join('; ')}.`);
+    throw new Error(
+      `Refusing to run: ${malformed.length} setting(s) hold something that cannot be a credential. ` +
+        `Nothing was queried and nothing was sent. Fix the value(s) above, then this runs itself.`,
+    );
   }
 
   const stripe = stripeClient();

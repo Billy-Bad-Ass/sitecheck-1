@@ -165,7 +165,12 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
 
       - name: Fulfil
+        id: fulfil
         if: ${{ !inputs.self_test }}
+        # Same reasoning as the self-test step: continue-on-error so the
+        # reporting step below still runs and can name the cause, with the
+        # job's own red restored at the end.
+        continue-on-error: true
         run: npm run fulfil -- ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -201,7 +206,9 @@ jobs:
           # a summary saying a paid audit would not be delivered is exactly
           # the contradiction this workflow keeps being fixed for.
           status: >-
-            ${{ (job.status == 'success' && steps.selftest.outcome != 'failure')
+            ${{ (job.status == 'success'
+                 && steps.selftest.outcome != 'failure'
+                 && steps.fulfil.outcome != 'failure')
                 && 'ok' || 'failed' }}
           started_at: ${{ steps.start.outputs.started }}
           summary: >-
@@ -210,9 +217,10 @@ jobs:
                 || (inputs.self_test
                     && (steps.selftest.outputs.verdict
                         || 'Self-test did not report a verdict — it died before finishing.')
-                    || (job.status == 'success'
-                        && 'Checked Stripe for paid audits.'
-                        || 'Fulfilment run did not complete — paid audits may be undelivered.')) }}
+                    || (steps.fulfil.outcome == 'failure'
+                        && (steps.fulfil.outputs.verdict
+                            || 'Fulfilment run did not complete — paid audits may be undelivered.')
+                        || 'Checked Stripe for paid audits.')) }}
           artifact_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           dashboard_url: ${{ secrets.DASHBOARD_URL }}
           dashboard_token: ${{ secrets.DASHBOARD_TOKEN }}
@@ -225,6 +233,12 @@ jobs:
         if: inputs.self_test && steps.selftest.outcome == 'failure'
         run: |
           echo "::error title=Delivery path is broken::${{ steps.selftest.outputs.verdict }}"
+          exit 1
+
+      - name: Fail if fulfilment failed
+        if: ${{ !inputs.self_test && steps.fulfil.outcome == 'failure' }}
+        run: |
+          echo "::error title=Fulfilment failed::${{ steps.fulfil.outputs.verdict || 'See the Fulfil step.' }}"
           exit 1
 
       # No artifacts, deliberately. Delivered reports are a customer's paid-for
