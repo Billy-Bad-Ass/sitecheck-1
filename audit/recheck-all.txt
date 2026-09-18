@@ -1,0 +1,39 @@
+# All 26 drafted site-check prospects, re-audited before any email is sent.
+#
+# The drafts in Code/growth/outreach/2026-09-15-site-check-twenty.md each make
+# one specific claim about one site, from audits dated 29 August and
+# 5 September. A fault that has since been fixed makes the email wrong, not
+# merely stale — and it is a stranger's inbox, so wrong is expensive.
+#
+#   Actions -> Audit live sites -> Run workflow -> list: recheck-all.txt
+#
+# Two of these cannot be reached by the fetcher at all (sherylshanelaw.com
+# does not resolve for us; broadwaydentalnova.com answers 403). They are kept
+# in the list so the report says so out loud rather than silently omitting
+# them.
+https://sherylshanelaw.com/
+https://broadwaydentalnova.com/
+https://breneman-iplaw.com/
+https://ushinedds.com/
+https://elpaw.net/
+https://amcdentalspa.com/
+https://alexandriasmilesdentistry.com/
+https://farrellandcroft.com/
+https://highlandtitle.com/
+https://valuevet.net/
+https://4delraysmiles.com/
+https://justlawintl.com/
+https://sgarlatlaw.com/
+https://brownlawpllc.com/
+https://fairfaxvirginiadentist.com/
+https://toebeansandtailsvet.com/
+https://allheartdentalcare.com/
+https://snoozedentistry.net/
+https://petloversvet.com/
+https://fallschurchmoderndentistry.com/
+https://lntdental.com/
+https://hughesleighton.com/
+https://macalikdds.com/
+https://livewellanimal.com/
+https://arlingtondentistry.co/
+https://fairfaxveterinary.com/

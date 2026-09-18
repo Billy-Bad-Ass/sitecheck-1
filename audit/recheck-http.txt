@@ -1,0 +1,15 @@
+# Four claims the main re-check could not settle, each at the address the
+# claim is actually about.
+#
+# The first two emails say the site is served insecurely. Auditing them at
+# https:// answers a different question than the one asked, so they are
+# listed here at http:// — which is what a visitor types.
+#
+# justlawintl.com's email leads on a slow first byte, and that is the one
+# finding that legitimately varies run to run. A second reading decides it.
+#
+# allheartdentalcare.com answered HTTP 500 during the main re-check.
+http://4delraysmiles.com/
+http://petloversvet.com/
+https://justlawintl.com/
+https://www.allheartdentalcare.com/
