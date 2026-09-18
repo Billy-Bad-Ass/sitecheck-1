@@ -178,6 +178,21 @@ jobs:
       - name: Show the outreach list
         run: cat out/leads.md
 
+      # leads.md gives one opening line per site — the single most expensive
+      # finding. Re-checking a drafted email needs the rest of them: the draft
+      # may cite any finding on the list, and "it is no longer the opener" is
+      # not the same as "it has been fixed". One line per site, every finding
+      # on it, so a claim can be confirmed or dropped by reading.
+      - name: List every finding, one line per site
+        run: |
+          node -e "
+            const all = require('./out/audits.json');
+            for (const a of all) {
+              const titles = (a.findings || []).map(f => f.title ?? f.id ?? String(f));
+              console.log('FLAT\t' + a.url + '\t' + (a.error ? 'ERROR: ' + a.error : titles.join(' | ')));
+            }
+          "
+
       - name: Sanity-check the output
         run: |
           set -e
