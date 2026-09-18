@@ -1,0 +1,22 @@
+# The two prospects no automated route can reach.
+#
+# Both are the best of all 49 by opportunity score, and both publish no email
+# address and no phone number anywhere a scanner can read. The route to them
+# is Billy opening the site in a browser and reading the contact details off
+# the page — a two-minute job, but only worth doing if the finding is still
+# true.
+#
+# That is what this list is for. The drafted emails say one specific thing
+# about each site, and a fault that has since been fixed makes the email
+# wrong rather than merely stale. Re-run this before sending:
+#
+#   Actions -> Audit live sites -> Run workflow -> list: recheck.txt
+#
+# Expected, as of 15 September:
+#   sherylshanelaw.com     a noindex tag telling search engines not to list it
+#   broadwaydentalnova.com no title tag on the homepage
+#
+# If either has gone, do not send that email — say so and pick another
+# finding from the report instead.
+https://sherylshanelaw.com/
+https://broadwaydentalnova.com/
