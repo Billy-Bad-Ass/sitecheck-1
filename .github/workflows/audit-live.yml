@@ -29,12 +29,24 @@ on:
       concurrency:
         description: 'Sites in flight at once'
         default: '2'
+      discover:
+        description: 'Also run discovery against Overpass (off for a list re-check)'
+        type: boolean
+        default: true
 
 jobs:
   # Proves the discovery step works against the real Overpass API: turning a
   # trade and a town into an auditable prospect list is the claim that removes
   # the manual work, so it needs testing against the live service.
+  #
+  # Skippable, because it used to run on every dispatch. Re-checking a named
+  # list would fire a discovery run nobody asked for, against whatever trade
+  # and town the defaults happened to hold, and a thin Overpass result would
+  # then paint the run red for a reason that had nothing to do with the sites
+  # being re-checked. A red run that means nothing is a red run people stop
+  # reading.
   discover:
+    if: inputs.discover
     runs-on: ubuntu-latest
     permissions:
       contents: write
